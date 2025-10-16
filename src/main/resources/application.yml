@@ -1,0 +1,25 @@
+server:
+  servlet:
+    context-path: /file-transfer-api
+springdoc:
+  swagger-ui:
+    doc-expansion: none # To avoid open all tabs automatically when open swagger ui on browser
+    tags-sorter: alpha # To sort tag name of APIs
+    try-it-out-enabled: true # To tap "Try it out" button automatically when open an API tab
+    operations-sorter: alpha # To sort name of APIs (alpha, method)
+spring:
+  application:
+    name: file-transfer
+#  jpa:
+#    open-in-view: false
+#    properties:
+#      hibernate:
+#        dialect: org.hibernate.dialect.Oracle12cDialect
+#    show-sql: true
+#    hibernate:
+#      ddl-auto: none
+  profiles:
+    include: config # Don't open when deploy
+jasypt:
+  encryptor:
+    password: filetransferkey

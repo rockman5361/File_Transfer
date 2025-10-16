@@ -1,0 +1,22 @@
+server:
+  port: 8080
+spring:
+  datasource:
+    url: jdbc:mysql://127.0.0.1:3306/file_transfer_db?characterEncoding=utf-8&serverTimezone=GMT%2B8
+    username: root
+    password:
+    type: com.zaxxer.hikari.HikariDataSource
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      minimum-idle: 2
+      pool-name: file-transfer-sql-pool
+      connection-timeout: 30000
+      maximum-pool-size: 200
+file-transfer:
+#  configs-path: C:/Users/TioW/Desktop/Project/Backend/File_Transfer/configs
+#  extras-path: C:/Users/TioW/Desktop/Project/Backend/File_Transfer/extras
+  processing-path: D:\Backend\TransferFileToDatalake\
+#  cert-path: C:/Users/TioW/Desktop/Project/Backend/File_Transfer/cert
+  upload-to-datalake: false
+  housekeeping-backup-file-by-year: 1
+  housekeeping-log-file-by-month: 1
