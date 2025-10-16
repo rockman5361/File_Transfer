@@ -392,7 +392,10 @@ public class FileProcessorService {
                         // insert error log
                         fileTransferErrorLogService.insertOrUpdateErrorLog(dataSource, environment, file.getName(), ErrorType.EXTRACTION_ERROR, Collections.singletonList(file.getName()));
 
-                        moveToErrorFolder(mainFolderPath, dataSource, file, environment, ErrorType.EXTRACTION_ERROR, trackingContext);
+                        // Only move to error folder if the file still exists (might have been moved already during processing)
+                        if (file.exists()) {
+                            moveToErrorFolder(mainFolderPath, dataSource, file, environment, ErrorType.EXTRACTION_ERROR, trackingContext);
+                        }
                     }
                 }
             } else if (isCompressedFile(file)) {
@@ -407,7 +410,10 @@ public class FileProcessorService {
                     // insert error log
                     fileTransferErrorLogService.insertOrUpdateErrorLog(dataSource, environment, file.getName(), ErrorType.EXTRACTION_ERROR, Collections.singletonList(file.getName()));
 
-                    moveToErrorFolder(mainFolderPath, dataSource, file, environment, ErrorType.EXTRACTION_ERROR, trackingContext);
+                    // Only move to error folder if the file still exists (might have been moved already during extraction)
+                    if (file.exists()) {
+                        moveToErrorFolder(mainFolderPath, dataSource, file, environment, ErrorType.EXTRACTION_ERROR, trackingContext);
+                    }
                 }
             }
         }
