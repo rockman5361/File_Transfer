@@ -353,8 +353,14 @@ public class FileProcessorService {
             backupFolder.mkdirs();
         }
         try {
+            String fileName = file.getName();
             FileUtils.moveFileToDirectory(file, backupFolder, true);
-            logWriter.writeLog("Moved file: " + file.getAbsolutePath() + " to backup folder: " + backupFolder.getAbsolutePath(),
+
+            // Update the backup path in the tracking record
+            File movedFile = new File(backupFolder, fileName);
+            zipTrackingService.updateBackupPath(fileName, movedFile.getAbsolutePath());
+
+            logWriter.writeLog("Moved file: " + movedFile.getAbsolutePath() + " to backup folder: " + backupFolder.getAbsolutePath(),
                     dataSource,
                     successLogPath
             );

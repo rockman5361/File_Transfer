@@ -92,6 +92,26 @@ public class ZipTrackingService {
     }
 
     /**
+     * Updates the backup path for a zip file.
+     *
+     * @param zipFileName the name of the zip file
+     * @param backupPath the backup folder path
+     */
+    @Transactional
+    public void updateBackupPath(String zipFileName, String backupPath) {
+        try {
+            FileTransferZipTrackingEntity entity = zipTrackingRepository.findByFinalZipName(zipFileName);
+            if (entity != null) {
+                entity.setBACKUP_PATH(backupPath);
+                zipTrackingRepository.save(entity);
+                log.info("Updated backup path for: {} to {}", zipFileName, backupPath);
+            }
+        } catch (Exception e) {
+            log.error("Failed to update backup path for: {}", zipFileName, e);
+        }
+    }
+
+    /**
      * Retrieves all tracking records for a specific data source.
      *
      * @param dataSource the data source name
