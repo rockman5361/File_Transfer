@@ -17,6 +17,7 @@ public final class FileConstants {
     public static final String SEVEN_Z_EXTENSION = ".7z";
     public static final String XML_EXTENSION = ".xml";
     public static final String TXT_EXTENSION = ".txt";
+    public static final String GZ_EXTENSION = ".gz";
 
     // Folder names
     public static final String TEMP_FOLDER = "temp";
@@ -27,16 +28,15 @@ public final class FileConstants {
 
     // Buffer sizes
     public static final int BUFFER_SIZE = 1024;
-    public static final int DEFAULT_MAX_ZIP_SIZE_MB = 1;
+    public static final int DEFAULT_MAX_ZIP_SIZE_MB = 1024 * 1024;
 
     // Date/Time formats
     public static final String DATE_FORMAT = "yyyy-MM-dd";
     public static final String DATETIME_FORMAT = "yyyy:MM:dd HH:mm:ss";
     public static final String FILE_DATETIME_FORMAT = "yyyyMMdd'T'HHmmss";
 
-    // Separators
-    public static final String PATH_SEPARATOR = System.getProperty("file.separator");
-
     // Sleep duration
     public static final long ZIP_CLOSE_SLEEP_MS = 1000L;
+
+    public static final String FILE_ALREADY_EXISTS = "already exists";
 }

@@ -1,5 +1,6 @@
 package org.ft.services;
 
+import org.ft.constants.FileConstants;
 import org.springframework.stereotype.Service;
 
 import java.io.BufferedWriter;
@@ -17,10 +18,10 @@ public class LogWriterService {
     public void writeLog(String logMessage, String filename, String path) {
         // Get today's date
         LocalDate today = LocalDate.now();
-        String formattedDate = today.format(DateTimeFormatter.ofPattern("yyyy-MM-dd"));
+        String formattedDate = today.format(DateTimeFormatter.ofPattern(FileConstants.DATE_FORMAT));
 
         // Create file name using date (e.g., log-YYYY-MM-DD.txt)
-        String fileName = filename + "_" + formattedDate + ".txt";
+        String fileName = filename + "_" + formattedDate + FileConstants.TXT_EXTENSION;
 
         // Check path is existing, if not create it
         File directory = new File(path);
@@ -50,7 +51,7 @@ public class LogWriterService {
     }
 
     private String convertToTimeStamp() {
-        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy:MM:dd HH:mm:ss");
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern(FileConstants.DATETIME_FORMAT);
         return LocalDateTime.now().format(formatter);
     }
 }

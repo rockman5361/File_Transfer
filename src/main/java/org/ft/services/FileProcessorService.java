@@ -80,9 +80,9 @@ public class FileProcessorService {
             return;
         }
 
-        setupFolders(mainFolderPath, entity.getDATA_SOURCE());
+        setupFolders(entity.getDATA_SOURCE());
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern(FileConstants.FILE_DATETIME_FORMAT);
-        LocalDateTime cutoffDate = LocalDateTime.now().minus(housekeepingBackupFileByYear, ChronoUnit.YEARS);
+        LocalDateTime cutoffDate = LocalDateTime.now().minusYears(housekeepingBackupFileByYear);
 
         for (Environment value : Environment.values()) {
             Path backupFolderPath = Paths.get(mainFolderPath, entity.getDATA_SOURCE(),
@@ -129,10 +129,10 @@ public class FileProcessorService {
             return;
         }
 
-        setupFolders(mainFolderPath, entity.getDATA_SOURCE());
+        setupFolders(entity.getDATA_SOURCE());
         Path logFolderPath = Paths.get(mainFolderPath, entity.getDATA_SOURCE(), FileConstants.LOG_FOLDER);
         File logFolder = logFolderPath.toFile();
-        LocalDate cutoffDate = LocalDate.now().minus(housekeepingLogFileByMonth, ChronoUnit.MONTHS);
+        LocalDate cutoffDate = LocalDate.now().minusMonths(housekeepingLogFileByMonth);
 
         if (logFolder.exists() && logFolder.isDirectory()) {
             File[] files = logFolder.listFiles();
@@ -180,12 +180,12 @@ public class FileProcessorService {
         }
 
         try {
-            setupFolders(mainFolderPath, entity.getDATA_SOURCE());
+            setupFolders(entity.getDATA_SOURCE());
 
             Path basePath = Paths.get(mainFolderPath, entity.getDATA_SOURCE());
-            String successLogPath = Paths.get(basePath.toString(), FileConstants.LOG_FOLDER).toString() + File.separator;
-            String errorLogPath = Paths.get(basePath.toString(), FileConstants.ERROR_FOLDER, FileConstants.LOG_FOLDER).toString() + File.separator;
-            String tempFolderPath = Paths.get(basePath.toString(), FileConstants.TEMP_FOLDER).toString() + File.separator;
+            String successLogPath = Paths.get(basePath.toString(), FileConstants.LOG_FOLDER) + File.separator;
+            String errorLogPath = Paths.get(basePath.toString(), FileConstants.ERROR_FOLDER, FileConstants.LOG_FOLDER) + File.separator;
+            String tempFolderPath = Paths.get(basePath.toString(), FileConstants.TEMP_FOLDER) + File.separator;
 
             // Map the folderPaths to same environment
             Map<String, List<FileTransferFolderPathEntity>> folderPathsByEnvironment = folderPaths.stream()
@@ -218,13 +218,13 @@ public class FileProcessorService {
                 processFolderPaths(folderPathEntityList, entity, environmentTempFolder, successLogPath, environment, trackingContext);
 
                 // extract compressed files in temp folder
-                extractCompressedFiles(environmentTempFolder, entity.getDATA_SOURCE(), successLogPath, errorLogPath, mainFolderPath, environment, trackingContext);
+                extractCompressedFiles(environmentTempFolder, entity.getDATA_SOURCE(), successLogPath, errorLogPath, environment, trackingContext);
 
                 // zip files in temp folder
                 File[] tempFiles = environmentTempFolder.listFiles();
                 if (tempFiles != null && tempFiles.length > 0) {
                     try {
-                        zipFiles(environmentTempFolder, mainFolderPath, entity.getDATA_SOURCE(), trackingContext);
+                        zipFiles(environmentTempFolder, entity.getDATA_SOURCE(), trackingContext);
 
                         logWriter.writeLog("Total Zipfile : " + tempFiles.length,
                                 entity.getDATA_SOURCE(),
@@ -255,7 +255,7 @@ public class FileProcessorService {
                                 log.error("Failed to send file to datalake: {}", file.getName(), e);
                             }
                         }
-                        moveFileToBackup(mainFolderPath, file, environment, entity.getDATA_SOURCE(), successLogPath);
+                        moveFileToBackup(file, environment, entity.getDATA_SOURCE(), successLogPath);
                     }
                 }
             }
@@ -337,18 +337,18 @@ public class FileProcessorService {
         } catch (IOException e) {
             if (e.getMessage().contains("already exists")) {
                 // Move both files to the error folder
-                fileExists(tempFolder, file, dataSource, mainFolderPath, environment, trackingContext);
+                fileExists(tempFolder, file, dataSource, environment, trackingContext);
             }
         }
     }
 
-    private void moveFileToBackup(String mainFolderPath, File file, String environment, String dataSource, String successLogPath) {
+    private void moveFileToBackup(File file, String environment, String dataSource, String successLogPath) {
         logWriter.writeLog("Starting moving files to backup folder",
                 dataSource,
                 successLogPath
         );
 
-        File backupFolder = new File(mainFolderPath + dataSource + "\\backup\\" + environment);
+        File backupFolder = new File(mainFolderPath + dataSource + File.separator + FileConstants.BACKUP_FOLDER + File.separator + environment);
         if (!backupFolder.exists()) {
             backupFolder.mkdirs();
         }
@@ -374,7 +374,7 @@ public class FileProcessorService {
         );
     }
 
-    private void extractCompressedFiles(File tempFolder, String dataSource, String successLogPath, String errorLogPath, String mainFolderPath, String environment, FileTrackingContext trackingContext) {
+    private void extractCompressedFiles(File tempFolder, String dataSource, String successLogPath, String errorLogPath, String environment, FileTrackingContext trackingContext) {
         if (tempFolder.listFiles() != null && Objects.requireNonNull(tempFolder.listFiles()).length != 0) {
             logWriter.writeLog("Start Compressed files in temp folder",
                     dataSource,
@@ -385,10 +385,10 @@ public class FileProcessorService {
         for (File file : Objects.requireNonNull(tempFolder.listFiles())) {
             if (file.isDirectory()) {
                 try {
-                    processDirectory(file, mainFolderPath, dataSource, tempFolder, environment, trackingContext);
+                    processDirectory(file, dataSource, tempFolder, environment, trackingContext);
                 } catch (IOException e) {
-                    if (e.getMessage().contains("already exists")) {
-                        fileExists(tempFolder, file, dataSource, mainFolderPath, environment, trackingContext);
+                    if (e.getMessage().contains(FileConstants.FILE_ALREADY_EXISTS)) {
+                        fileExists(tempFolder, file, dataSource, environment, trackingContext);
                     } else {
                         logWriter.writeLog("Failed to extract compressed file: " + file.getAbsolutePath() + " - " + e.getMessage(),
                                 dataSource,
@@ -400,13 +400,13 @@ public class FileProcessorService {
 
                         // Only move to error folder if the file still exists (might have been moved already during processing)
                         if (file.exists()) {
-                            moveToErrorFolder(mainFolderPath, dataSource, file, environment, ErrorType.EXTRACTION_ERROR, trackingContext);
+                            moveToErrorFolder(dataSource, file, environment, ErrorType.EXTRACTION_ERROR, trackingContext);
                         }
                     }
                 }
             } else if (isCompressedFile(file)) {
                 try {
-                    extractCompressedFile(file, mainFolderPath, dataSource, environment, tempFolder, trackingContext);
+                    extractCompressedFile(file, dataSource, environment, tempFolder, trackingContext);
                 } catch (IOException e) {
                     logWriter.writeLog("Failed to extract compressed file: " + file.getAbsolutePath() + " - " + e.getMessage(),
                             dataSource,
@@ -418,7 +418,7 @@ public class FileProcessorService {
 
                     // Only move to error folder if the file still exists (might have been moved already during extraction)
                     if (file.exists()) {
-                        moveToErrorFolder(mainFolderPath, dataSource, file, environment, ErrorType.EXTRACTION_ERROR, trackingContext);
+                        moveToErrorFolder(dataSource, file, environment, ErrorType.EXTRACTION_ERROR, trackingContext);
                     }
                 }
             }
@@ -427,19 +427,19 @@ public class FileProcessorService {
         for (File file : Objects.requireNonNull(tempFolder.listFiles())) {
             if (file.isDirectory()) {
                 try {
-                    processDirectory(file, mainFolderPath, dataSource, tempFolder, environment, trackingContext);
+                    processDirectory(file, dataSource, tempFolder, environment, trackingContext);
                 } catch (IOException e) {
                     log.error("Failed to process directory: {}", file.getAbsolutePath(), e);
                 }
-            } else if (!file.getName().endsWith(".xml")) {
+            } else if (!file.getName().endsWith(FileConstants.XML_EXTENSION)) {
                 logWriter.writeLog("Unsupported file format: " + file.getName(),
                         dataSource,
-                        mainFolderPath + dataSource + "\\error\\log\\"
+                        errorLogPath
                 );
 
                 // insert error log
                 fileTransferErrorLogService.insertOrUpdateErrorLog(dataSource, environment, file.getName(), ErrorType.WRONG_FILE_TYPE, Collections.singletonList(file.getName()));
-                moveToErrorFolder(mainFolderPath, dataSource, file, environment, ErrorType.WRONG_FILE_TYPE, trackingContext);
+                moveToErrorFolder(dataSource, file, environment, ErrorType.WRONG_FILE_TYPE, trackingContext);
             }
         }
 
@@ -451,20 +451,20 @@ public class FileProcessorService {
         }
     }
 
-    private void processDirectory(File directory, String mainFolderPath, String dataSource, File tempFolder, String environment, FileTrackingContext trackingContext) throws IOException {
+    private void processDirectory(File directory, String dataSource, File tempFolder, String environment, FileTrackingContext trackingContext) throws IOException {
         for (File file : Objects.requireNonNull(directory.listFiles())) {
             if (file.isDirectory()) {
-                processDirectory(file, mainFolderPath, dataSource, tempFolder, environment, trackingContext);
+                processDirectory(file, dataSource, tempFolder, environment, trackingContext);
             } else if (isCompressedFile(file)) {
-                extractCompressedFile(file, mainFolderPath, dataSource, environment, tempFolder, trackingContext);
+                extractCompressedFile(file, dataSource, environment, tempFolder, trackingContext);
             } else {
                 try {
                     FileUtils.moveFileToDirectory(file, tempFolder, true);
                     // Note: Files from directories don't get tracked as they're intermediate
                 } catch (IOException e) {
-                    if (e.getMessage().contains("already exists")) {
+                    if (e.getMessage().contains(FileConstants.FILE_ALREADY_EXISTS)) {
                         // Move both files to the error folder
-                        fileExists(tempFolder, file, dataSource, mainFolderPath, environment, trackingContext);
+                        fileExists(tempFolder, file, dataSource, environment, trackingContext);
                     }
                 }
             }
@@ -476,7 +476,7 @@ public class FileProcessorService {
         }
     }
 
-    private void fileExists(File tempFolder, File file, String dataSource, String mainFolderPath, String environment, FileTrackingContext trackingContext) {
+    private void fileExists(File tempFolder, File file, String dataSource, String environment, FileTrackingContext trackingContext) {
         if(file.isDirectory() || isCompressedFile(file)) {
             // If the file is a directory, we need to rename it before moving
             try {
@@ -504,8 +504,8 @@ public class FileProcessorService {
             // Move both files to the error folder
             File targetFile = new File(tempFolder, file.getName());
 
-            moveToErrorFolder(mainFolderPath, dataSource, targetFile, environment, ErrorType.DUPLICATE_FILE, trackingContext);
-            moveToErrorFolder(mainFolderPath, dataSource, renamedFile, environment, ErrorType.DUPLICATE_FILE, trackingContext);
+            moveToErrorFolder(dataSource, targetFile, environment, ErrorType.DUPLICATE_FILE, trackingContext);
+            moveToErrorFolder(dataSource, renamedFile, environment, ErrorType.DUPLICATE_FILE, trackingContext);
 
             // insert error log
             List<String> errorFileList = new ArrayList<>();
@@ -515,7 +515,7 @@ public class FileProcessorService {
 
             logWriter.writeLog("File already duplicate: " + file.getName(),
                     dataSource,
-                    mainFolderPath + dataSource + "\\error\\log\\"
+                    mainFolderPath + dataSource + File.separator + FileConstants.ERROR_FOLDER + File.separator + FileConstants.LOG_FOLDER + File.separator
             );
         }
     }
@@ -538,23 +538,23 @@ public class FileProcessorService {
         return renamedFile;
     }
 
-    private void extractCompressedFile(File file, String mainFolderPath, String dataSource, String environment, File tempFolderPath, FileTrackingContext trackingContext) throws IOException {
+    private void extractCompressedFile(File file, String dataSource, String environment, File tempFolderPath, FileTrackingContext trackingContext) throws IOException {
         logWriter.writeLog("Extracted compressed file: " + file.getAbsolutePath(),
                 dataSource,
-                mainFolderPath + dataSource + "\\log\\"
+                mainFolderPath + dataSource + File.separator + FileConstants.LOG_FOLDER + File.separator
         );
 
         File destDir = file.getParentFile();
         String sourceZipName = file.getName();
 
         if (file.getName().endsWith(".zip")) {
-            extractZip(file, destDir, mainFolderPath, dataSource, environment, tempFolderPath, trackingContext, sourceZipName);
+            extractZip(file, destDir, dataSource, environment, tempFolderPath, trackingContext, sourceZipName);
         } else if (file.getName().endsWith(".tar")) {
-            extractTar(file, destDir, mainFolderPath, dataSource, environment, tempFolderPath, trackingContext, sourceZipName);
+            extractTar(file, destDir, dataSource, environment, tempFolderPath, trackingContext, sourceZipName);
         } else if (file.getName().endsWith(".tz") || file.getName().endsWith(".tar.gz")) {
-            extractTz(file, destDir, mainFolderPath, dataSource, environment, tempFolderPath, trackingContext, sourceZipName);
+            extractTz(file, destDir, dataSource, environment, tempFolderPath, trackingContext, sourceZipName);
         } else if (file.getName().endsWith(".7z")) {
-            extract7z(file, destDir, mainFolderPath, dataSource, environment, tempFolderPath, trackingContext, sourceZipName);
+            extract7z(file, destDir, dataSource, environment, tempFolderPath, trackingContext, sourceZipName);
         }
 
         if (!file.delete()) {
@@ -562,7 +562,7 @@ public class FileProcessorService {
         }
     }
 
-    private void extractZip(File zipFile, File destDir, String mainFolderPath, String dataSource, String environment, File tempFolder, FileTrackingContext trackingContext, String sourceZipName) throws IOException {
+    private void extractZip(File zipFile, File destDir, String dataSource, String environment, File tempFolder, FileTrackingContext trackingContext, String sourceZipName) throws IOException {
         try (ZipInputStream zipInputStream = new ZipInputStream(Files.newInputStream(zipFile.toPath()))) {
             ZipEntry entry;
             while ((entry = zipInputStream.getNextEntry()) != null) {
@@ -570,24 +570,24 @@ public class FileProcessorService {
                 if (entry.isDirectory()) {
                     entryFile.mkdirs();
                 } else {
-                    writeToFile(zipInputStream, entryFile, dataSource, mainFolderPath, environment, trackingContext, sourceZipName);
+                    writeToFile(zipInputStream, entryFile, dataSource, environment, trackingContext, sourceZipName);
                 }
                 zipInputStream.closeEntry();
                 if (isCompressedFile(entryFile)) {
-                    extractCompressedFile(entryFile, mainFolderPath, dataSource, environment, tempFolder, trackingContext);
+                    extractCompressedFile(entryFile, dataSource, environment, tempFolder, trackingContext);
                 }
             }
         }
     }
 
-    private void writeToFile(InputStream inputStream, File file, String dataSource, String mainFolderPath, String environment, FileTrackingContext trackingContext, String sourceZipName) throws IOException {
+    private void writeToFile(InputStream inputStream, File file, String dataSource, String environment, FileTrackingContext trackingContext, String sourceZipName) throws IOException {
         boolean isExist = file.exists();
 
         // Rename the file if it already exists
-        file = getUniqueFileName(file, dataSource, mainFolderPath, environment, trackingContext);
+        file = getUniqueFileName(file, dataSource, environment, trackingContext);
 
         try (FileOutputStream fos = new FileOutputStream(file)) {
-            byte[] buffer = new byte[1024];
+            byte[] buffer = new byte[FileConstants.BUFFER_SIZE];
             int len;
             while ((len = inputStream.read(buffer)) > 0) {
                 fos.write(buffer, 0, len);
@@ -598,11 +598,11 @@ public class FileProcessorService {
         trackingContext.trackExtractedFile(file.getName(), sourceZipName, file.length());
 
         if(isExist) {
-            moveToErrorFolder(mainFolderPath, dataSource, file, environment, ErrorType.DUPLICATE_FILE, trackingContext);
+            moveToErrorFolder(dataSource, file, environment, ErrorType.DUPLICATE_FILE, trackingContext);
         }
     }
 
-    private void extract7z(File sevenZipFile, File destDir, String mainFolderPath, String dataSource, String environment, File tempFolder, FileTrackingContext trackingContext, String sourceZipName) throws IOException {
+    private void extract7z(File sevenZipFile, File destDir, String dataSource, String environment, File tempFolder, FileTrackingContext trackingContext, String sourceZipName) throws IOException {
         try (SevenZFile sevenZFile = new SevenZFile(sevenZipFile)) {
             SevenZArchiveEntry entry;
             while ((entry = sevenZFile.getNextEntry()) != null) {
@@ -613,13 +613,13 @@ public class FileProcessorService {
                 boolean isExist = outputFile.exists();
 
                 // Rename the file if it already exists
-                outputFile = getUniqueFileName(outputFile, dataSource, mainFolderPath, environment, trackingContext);
+                outputFile = getUniqueFileName(outputFile, dataSource, environment, trackingContext);
 
                 if (entry.isDirectory()) {
                     outputFile.mkdirs();
                 } else {
                     try (FileOutputStream fos = new FileOutputStream(outputFile)) {
-                        byte[] buffer = new byte[1024];
+                        byte[] buffer = new byte[FileConstants.BUFFER_SIZE];
                         int bytesRead;
                         while ((bytesRead = sevenZFile.read(buffer)) > 0) {
                             fos.write(buffer, 0, bytesRead);
@@ -630,18 +630,18 @@ public class FileProcessorService {
                     trackingContext.trackExtractedFile(outputFile.getName(), sourceZipName, outputFile.length());
 
                     if(isExist) {
-                        moveToErrorFolder(mainFolderPath, dataSource, outputFile, environment, ErrorType.DUPLICATE_FILE, trackingContext);
+                        moveToErrorFolder(dataSource, outputFile, environment, ErrorType.DUPLICATE_FILE, trackingContext);
                     }
                 }
 
                 if (isCompressedFile(outputFile)) {
-                    extractCompressedFile(outputFile, mainFolderPath, dataSource, environment, tempFolder, trackingContext);
+                    extractCompressedFile(outputFile, dataSource, environment, tempFolder, trackingContext);
                 }
             }
         }
     }
 
-    private File getUniqueFileName(File file, String dataSource, String mainFolderPath, String environment, FileTrackingContext trackingContext) {
+    private File getUniqueFileName(File file, String dataSource, String environment, FileTrackingContext trackingContext) {
         String fileName = file.getName();
         int dotIndex = fileName.lastIndexOf(".");
         String baseName = (dotIndex == -1) ? fileName : fileName.substring(0, dotIndex);
@@ -653,10 +653,10 @@ public class FileProcessorService {
             uniqueFile = new File(file.getParent(), baseName + "(" + counter + ")" + extension);
 
             if(!(uniqueFile.isDirectory() && isCompressedFile(uniqueFile))) {
-                moveToErrorFolder(mainFolderPath, dataSource, file, environment, ErrorType.DUPLICATE_FILE, trackingContext);
+                moveToErrorFolder(dataSource, file, environment, ErrorType.DUPLICATE_FILE, trackingContext);
                 logWriter.writeLog("File already duplicate: " + file.getName(),
                         dataSource,
-                        mainFolderPath + dataSource + "\\error\\log\\"
+                        mainFolderPath + dataSource + File.separator + FileConstants.ERROR_FOLDER + File.separator + FileConstants.LOG_FOLDER + File.separator
                 );
 
                 // insert error log
@@ -671,7 +671,7 @@ public class FileProcessorService {
         return uniqueFile;
     }
 
-    private void extractTar(File tarFile, File destDir, String mainFolderPath, String dataSource, String environment, File tempFolder, FileTrackingContext trackingContext, String sourceZipName) throws IOException {
+    private void extractTar(File tarFile, File destDir, String dataSource, String environment, File tempFolder, FileTrackingContext trackingContext, String sourceZipName) throws IOException {
         try (TarArchiveInputStream tarInputStream = new TarArchiveInputStream(Files.newInputStream(tarFile.toPath()))) {
             TarArchiveEntry entry;
             while ((entry = tarInputStream.getNextTarEntry()) != null) {
@@ -679,20 +679,20 @@ public class FileProcessorService {
                 if (entry.isDirectory()) {
                     entryFile.mkdirs();
                 } else {
-                    writeToFile(tarInputStream, entryFile, dataSource, mainFolderPath, environment, trackingContext, sourceZipName);
+                    writeToFile(tarInputStream, entryFile, dataSource, environment, trackingContext, sourceZipName);
                 }
                 if (isCompressedFile(entryFile)) {
-                    extractCompressedFile(entryFile, mainFolderPath, dataSource, environment, tempFolder, trackingContext);
+                    extractCompressedFile(entryFile, dataSource, environment, tempFolder, trackingContext);
                 }
             }
         }
     }
 
-    private void extractTz(File tzFile, File destDir, String mainFolderPath, String dataSource, String environment, File tempFolder, FileTrackingContext trackingContext, String sourceZipName) throws IOException {
+    private void extractTz(File tzFile, File destDir, String dataSource, String environment, File tempFolder, FileTrackingContext trackingContext, String sourceZipName) throws IOException {
         try (GzipCompressorInputStream gzipInputStream = new GzipCompressorInputStream(Files.newInputStream(tzFile.toPath()))) {
-            File tarFile = new File(destDir, tzFile.getName().replace(".gz", ""));
-            writeToFile(gzipInputStream, tarFile, dataSource, mainFolderPath, environment, trackingContext, sourceZipName);
-            extractTar(tarFile, destDir, mainFolderPath, dataSource, environment, tempFolder, trackingContext, sourceZipName);
+            File tarFile = new File(destDir, tzFile.getName().replace(FileConstants.GZ_EXTENSION, ""));
+            writeToFile(gzipInputStream, tarFile, dataSource, environment, trackingContext, sourceZipName);
+            extractTar(tarFile, destDir, dataSource, environment, tempFolder, trackingContext, sourceZipName);
             if (!tarFile.delete()) {
                 log.warn("Failed to delete intermediate .tar file: {}", tarFile.getAbsolutePath());
             }
@@ -701,20 +701,20 @@ public class FileProcessorService {
 
     private boolean isCompressedFile(File file) {
         String name = file.getName().toLowerCase();
-        return name.endsWith(".zip") || name.endsWith(".tar") || name.endsWith(".tz") || name.endsWith(".tar.gz") || name.endsWith(".7z");
+        return name.endsWith(FileConstants.ZIP_EXTENSION) || name.endsWith(FileConstants.TAR_EXTENSION) || name.endsWith(FileConstants.TZ_EXTENSION) || name.endsWith(FileConstants.TAR_GZ_EXTENSION) || name.endsWith(FileConstants.SEVEN_Z_EXTENSION);
     }
 
-    private void zipFiles(File tempFolder, String mainFolderPath, String dataSource, FileTrackingContext trackingContext) throws IOException, InterruptedException {
+    private void zipFiles(File tempFolder, String dataSource, FileTrackingContext trackingContext) throws IOException, InterruptedException {
         int currentZipSize = 0;
         ZipOutputStream zos = null;
         File currentZipFile = null;
         List<String> currentZipFileNames = new ArrayList<>();
 
         FileTransferSettingEntity fileTransferSettingEntity = customMapper.getFileTransferSettingByType(FileTransferSettingEntity.Type.MAX_ZIP_SIZE.name());
-        int MAX_ZIP_SIZE = 1024 * 1024; // Default to 1MB
+        int MAX_ZIP_SIZE = FileConstants.DEFAULT_MAX_ZIP_SIZE_MB; // Default to 1MB
         if(fileTransferSettingEntity != null) {
             try {
-                MAX_ZIP_SIZE = Integer.parseInt(fileTransferSettingEntity.getVALUE()) * 1024 * 1024;
+                MAX_ZIP_SIZE = Integer.parseInt(fileTransferSettingEntity.getVALUE()) * FileConstants.DEFAULT_MAX_ZIP_SIZE_MB;
             } catch (NumberFormatException e) {
                 log.warn("Invalid MAX_ZIP_SIZE value in database, using default: {}", e.getMessage());
             }
@@ -723,7 +723,7 @@ public class FileProcessorService {
         try {
             logWriter.writeLog("Start zipping files in temp folder",
                     dataSource,
-                    mainFolderPath + dataSource + "\\log\\"
+                    mainFolderPath + dataSource + File.separator + FileConstants.LOG_FOLDER + File.separator
             );
 
             for (File file : Objects.requireNonNull(tempFolder.listFiles())) {
@@ -732,15 +732,15 @@ public class FileProcessorService {
                     // Complete the previous zip record if exists
                     if (zos != null) {
                         zos.close();
-                        Thread.sleep(1000); // Sleep for 1 second to ensure the zip file is closed properly
+                        Thread.sleep(FileConstants.ZIP_CLOSE_SLEEP_MS); // Sleep for 1 second to ensure the zip file is closed properly
 
                         // Save tracking information for the completed zip
-                        saveZipTrackingInfo(currentZipFile, currentZipFileNames, trackingContext, dataSource, mainFolderPath);
+                        saveZipTrackingInfo(currentZipFile, currentZipFileNames, trackingContext, dataSource);
                         currentZipFileNames.clear();
                     }
 
                     // Create new zip file
-                    String zipFileName = dataSource + "_" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss")) + ".zip";
+                    String zipFileName = dataSource + "_" + LocalDateTime.now().format(DateTimeFormatter.ofPattern(FileConstants.FILE_DATETIME_FORMAT)) + FileConstants.ZIP_EXTENSION;
                     currentZipFile = new File(tempFolder.getAbsolutePath() + "\\" + zipFileName);
                     zos = new ZipOutputStream(Files.newOutputStream(currentZipFile.toPath()));
                     currentZipSize = 0;
@@ -759,7 +759,7 @@ public class FileProcessorService {
 
             // Save tracking info for the last zip
             if (zos != null && currentZipFile != null && !currentZipFileNames.isEmpty()) {
-                saveZipTrackingInfo(currentZipFile, currentZipFileNames, trackingContext, dataSource, mainFolderPath);
+                saveZipTrackingInfo(currentZipFile, currentZipFileNames, trackingContext, dataSource);
             }
         } finally {
             if (zos != null) {
@@ -771,8 +771,7 @@ public class FileProcessorService {
     /**
      * Saves tracking information for a completed zip file to the database.
      */
-    private void saveZipTrackingInfo(File zipFile, List<String> fileNames, FileTrackingContext trackingContext,
-                                     String dataSource, String mainFolderPath) {
+    private void saveZipTrackingInfo(File zipFile, List<String> fileNames, FileTrackingContext trackingContext, String dataSource) {
         try {
             // Create tracking builder
             ZipTrackingService.ZipTrackingDTOBuilder builder = zipTrackingService.createTrackingBuilder(
@@ -812,7 +811,7 @@ public class FileProcessorService {
         if (!isCompressedFile(file)) {
             try (FileInputStream fis = new FileInputStream(file)) {
                 zos.putNextEntry(new ZipEntry(file.getName()));
-                byte[] buffer = new byte[1024];
+                byte[] buffer = new byte[FileConstants.BUFFER_SIZE];
                 int len;
                 while ((len = fis.read(buffer)) > 0) {
                     zos.write(buffer, 0, len);
@@ -822,25 +821,25 @@ public class FileProcessorService {
         }
     }
 
-    private void setupFolders(String mainFolderPath, String dataSource) {
+    private void setupFolders(String dataSource) {
         // Create the data source folder if it doesn't exist
         createFolder(mainFolderPath + dataSource);
 
         // Create temp folder if it doesn't exist
-        createFolder(mainFolderPath + dataSource + "\\temp");
+        createFolder(mainFolderPath + dataSource + File.separator + FileConstants.TEMP_FOLDER);
 
         // Create backup folder if it doesn't exist
-        createFolder(mainFolderPath + dataSource + "\\backup");
+        createFolder(mainFolderPath + dataSource + File.separator + FileConstants.BACKUP_FOLDER);
 
         // Create log folder if it doesn't exist
-        createFolder(mainFolderPath + dataSource + "\\log");
+        createFolder(mainFolderPath + dataSource + File.separator + FileConstants.LOG_FOLDER);
 
         // Create error folder if it doesn't exist
-        createFolder(mainFolderPath + dataSource + "\\error");
+        createFolder(mainFolderPath + dataSource + File.separator + FileConstants.ERROR_FOLDER);
 
         // Create error sub folder if it doesn't exist
-        createFolder(mainFolderPath + dataSource + "\\error\\files");
-        createFolder(mainFolderPath + dataSource + "\\error\\log");
+        createFolder(mainFolderPath + dataSource + File.separator + FileConstants.ERROR_FOLDER + File.separator + FileConstants.FILES_FOLDER);
+        createFolder(mainFolderPath + dataSource + File.separator + FileConstants.ERROR_FOLDER + File.separator + FileConstants.LOG_FOLDER);
     }
 
     private void createFolder(String path) {
@@ -852,9 +851,9 @@ public class FileProcessorService {
         }
     }
 
-    private void moveToErrorFolder(String mainFolderPath, String dataSource, File file, String environment, ErrorType errorType, FileTrackingContext trackingContext) {
+    private void moveToErrorFolder(String dataSource, File file, String environment, ErrorType errorType, FileTrackingContext trackingContext) {
         try {
-            String errorFolderPath = mainFolderPath + dataSource + "\\error\\files\\" + environment + "\\";
+            String errorFolderPath = mainFolderPath + dataSource + File.separator + FileConstants.ERROR_FOLDER + File.separator + FileConstants.FILES_FOLDER + environment + File.separator;
             File errorFolder = new File(errorFolderPath);
 
             // Create the error folder if it doesn't exist
