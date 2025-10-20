@@ -706,33 +706,63 @@ public class FileProcessorService {
 
     private void zipFiles(File tempFolder, String dataSource, FileTrackingContext trackingContext) throws IOException, InterruptedException {
         int currentZipSize = 0;
+        int currentFileCount = 0;
         ZipOutputStream zos = null;
         File currentZipFile = null;
         List<String> currentZipFileNames = new ArrayList<>();
 
-        FileTransferSettingEntity fileTransferSettingEntity = customMapper.getFileTransferSettingByType(FileTransferSettingEntity.Type.MAX_ZIP_SIZE.name());
+        // Get MAX_ZIP_SIZE setting
+        FileTransferSettingEntity maxZipSizeEntity = customMapper.getFileTransferSettingByType(FileTransferSettingEntity.Type.MAX_ZIP_SIZE.name());
         int MAX_ZIP_SIZE = FileConstants.DEFAULT_MAX_ZIP_SIZE_MB; // Default to 1MB
-        if(fileTransferSettingEntity != null) {
+        if(maxZipSizeEntity != null) {
             try {
-                MAX_ZIP_SIZE = Integer.parseInt(fileTransferSettingEntity.getVALUE()) * FileConstants.DEFAULT_MAX_ZIP_SIZE_MB;
+                MAX_ZIP_SIZE = Integer.parseInt(maxZipSizeEntity.getVALUE()) * FileConstants.DEFAULT_MAX_ZIP_SIZE_MB;
             } catch (NumberFormatException e) {
                 log.warn("Invalid MAX_ZIP_SIZE value in database, using default: {}", e.getMessage());
             }
         }
 
+        // Get MAX_ZIP_FILES setting
+        FileTransferSettingEntity maxZipFilesEntity = customMapper.getFileTransferSettingByType(FileTransferSettingEntity.Type.MAX_ZIP_FILES.name());
+        int MAX_ZIP_FILES = Integer.MAX_VALUE; // Default to unlimited
+        if(maxZipFilesEntity != null) {
+            try {
+                MAX_ZIP_FILES = Integer.parseInt(maxZipFilesEntity.getVALUE());
+            } catch (NumberFormatException e) {
+                log.warn("Invalid MAX_ZIP_FILES value in database, using default: {}", e.getMessage());
+            }
+        }
+
         try {
-            logWriter.writeLog("Start zipping files in temp folder",
+            logWriter.writeLog("Start zipping files in temp folder (MAX_ZIP_SIZE: " + MAX_ZIP_SIZE + " bytes, MAX_ZIP_FILES: " + MAX_ZIP_FILES + " files)",
                     dataSource,
                     mainFolderPath + dataSource + File.separator + FileConstants.LOG_FOLDER + File.separator
             );
 
             for (File file : Objects.requireNonNull(tempFolder.listFiles())) {
-                // If adding the next file will exceed the size limit, close the current zip and start a new one
-                if (zos == null || currentZipSize + file.length() > MAX_ZIP_SIZE) {
+                // If adding the next file will exceed either the size limit or file count limit, close the current zip and start a new one
+                boolean exceedsSizeLimit = currentZipSize + file.length() > MAX_ZIP_SIZE;
+                boolean exceedsFileLimit = currentFileCount >= MAX_ZIP_FILES;
+
+                if (zos == null || exceedsSizeLimit || exceedsFileLimit) {
                     // Complete the previous zip record if exists
                     if (zos != null) {
                         zos.close();
                         Thread.sleep(FileConstants.ZIP_CLOSE_SLEEP_MS); // Sleep for 1 second to ensure the zip file is closed properly
+
+                        // Log the reason for creating a new zip
+                        if (exceedsSizeLimit) {
+                            logWriter.writeLog("Creating new zip file - size limit reached (current: " + currentZipSize + " bytes, limit: " + MAX_ZIP_SIZE + " bytes)",
+                                    dataSource,
+                                    mainFolderPath + dataSource + File.separator + FileConstants.LOG_FOLDER + File.separator
+                            );
+                        }
+                        if (exceedsFileLimit) {
+                            logWriter.writeLog("Creating new zip file - file count limit reached (current: " + currentFileCount + " files, limit: " + MAX_ZIP_FILES + " files)",
+                                    dataSource,
+                                    mainFolderPath + dataSource + File.separator + FileConstants.LOG_FOLDER + File.separator
+                            );
+                        }
 
                         // Save tracking information for the completed zip
                         saveZipTrackingInfo(currentZipFile, currentZipFileNames, trackingContext, dataSource);
@@ -744,12 +774,19 @@ public class FileProcessorService {
                     currentZipFile = new File(tempFolder.getAbsolutePath() + "\\" + zipFileName);
                     zos = new ZipOutputStream(Files.newOutputStream(currentZipFile.toPath()));
                     currentZipSize = 0;
+                    currentFileCount = 0;
+
+                    logWriter.writeLog("Created new zip file: " + zipFileName,
+                            dataSource,
+                            mainFolderPath + dataSource + File.separator + FileConstants.LOG_FOLDER + File.separator
+                    );
                 }
 
                 // Add the file to the current zip
                 addFileToZip(zos, file);
                 currentZipFileNames.add(file.getName());
                 currentZipSize += (int) file.length();
+                currentFileCount++;
 
                 // delete the original file after zipping
                 if (!file.delete()) {
