@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//d/Backend/Backup/**)",
+      "Bash(tar:*)",
+      "Bash(cat:*)",
+      "Bash(mysql:*)",
+      "Bash(dir:*)",
+      "Bash(where:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

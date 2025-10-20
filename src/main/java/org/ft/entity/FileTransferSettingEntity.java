@@ -14,6 +14,7 @@ public class FileTransferSettingEntity {
 
     public enum Type {
         MAX_ZIP_SIZE,
+        MAX_ZIP_FILES
     }
 
     @JsonProperty("ID")
