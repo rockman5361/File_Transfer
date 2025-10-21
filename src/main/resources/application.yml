@@ -10,6 +10,10 @@ springdoc:
 spring:
   application:
     name: file-transfer
+#jasypt:
+#  encryptor:
+#    password: ${JASYPT_ENCRYPTOR_PASSWORD:}
+#    algorithm: PBEWithMD5AndDES
 #  jpa:
 #    open-in-view: false
 #    properties:
@@ -20,6 +24,3 @@ spring:
 #      ddl-auto: none
   profiles:
     include: config # Don't open when deploy
-jasypt:
-  encryptor:
-    password: filetransferkey
