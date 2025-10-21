@@ -1,6 +1,6 @@
 package org.ft.util;
 
-import lombok.Data;
+import lombok.Getter;
 import org.ft.dto.FileInfoDTO;
 
 import java.io.File;
@@ -12,7 +12,6 @@ import java.util.concurrent.ConcurrentHashMap;
  * Maintains relationships between files and their original sources throughout
  * the move and extraction process.
  */
-@Data
 public class FileTrackingContext {
 
     // Map: temp file name -> FileInfoDTO (tracks all files in temp folder)
@@ -21,13 +20,17 @@ public class FileTrackingContext {
     // Map: temp file name -> original folder path
     private final Map<String, String> fileToFolderPath;
 
-    // Map: extracted file name -> source zip name
+    // Map: extracted file name -> source zip name (immediate parent)
     private final Map<String, String> extractedFileToZip;
+
+    // Map: file name -> first-level archive name (root archive only)
+    private final Map<String, String> fileToFirstLevelArchive;
 
     // Set of all original folder paths being processed
     private final Set<String> sourceFolderPaths;
 
     // Current environment being processed
+    @Getter
     private final String environment;
 
     public FileTrackingContext(String environment) {
@@ -35,6 +38,7 @@ public class FileTrackingContext {
         this.fileMetadata = new ConcurrentHashMap<>();
         this.fileToFolderPath = new ConcurrentHashMap<>();
         this.extractedFileToZip = new ConcurrentHashMap<>();
+        this.fileToFirstLevelArchive = new ConcurrentHashMap<>();
         this.sourceFolderPaths = new HashSet<>();
     }
 
@@ -63,7 +67,7 @@ public class FileTrackingContext {
      * Records that a file was extracted from a compressed archive.
      *
      * @param extractedFileName the extracted file name
-     * @param sourceZipName the original zip file name
+     * @param sourceZipName the immediate parent archive file name
      * @param fileSize the file size in bytes
      */
     public void trackExtractedFile(String extractedFileName, String sourceZipName, Long fileSize) {
@@ -72,10 +76,21 @@ public class FileTrackingContext {
 
         extractedFileToZip.put(extractedFileName, sourceZipName);
 
+        // Determine the first-level archive (root archive)
+        // If sourceZipName has a first-level archive, use that (nested case)
+        // Otherwise, sourceZipName itself is the first-level archive
+        String firstLevelArchive = fileToFirstLevelArchive.get(sourceZipName);
+        if (firstLevelArchive == null) {
+            // sourceZipName is the first-level archive (came directly from folder)
+            firstLevelArchive = sourceZipName;
+        }
+        // Track the first-level archive for this extracted file
+        fileToFirstLevelArchive.put(extractedFileName, firstLevelArchive);
+
         FileInfoDTO fileInfo = FileInfoDTO.builder()
                 .fileName(extractedFileName)
                 .source("extracted")
-                .originalZip(sourceZipName)
+                .originalZip(firstLevelArchive)  // Store first-level archive, not immediate parent
                 .fileSizeBytes(fileSize)
                 .originalFolderPath(originalFolderPath)
                 .build();
@@ -133,6 +148,7 @@ public class FileTrackingContext {
         fileMetadata.remove(fileName);
         fileToFolderPath.remove(fileName);
         extractedFileToZip.remove(fileName);
+        fileToFirstLevelArchive.remove(fileName);
     }
 
     /**
@@ -142,5 +158,27 @@ public class FileTrackingContext {
      */
     public int getTrackedFileCount() {
         return fileMetadata.size();
+    }
+
+    /**
+     * Gets the original folder path for a file.
+     *
+     * @param fileName the file name
+     * @return the folder path, or null if not tracked
+     */
+    public String getFolderPath(String fileName) {
+        return fileToFolderPath.get(fileName);
+    }
+
+    /**
+     * Gets the original archive file name (first-level only) for an extracted file.
+     * Returns null if the file was not extracted from any archive.
+     * For nested archives, returns the outermost (first-level) archive.
+     *
+     * @param fileName the file name
+     * @return the first-level archive name, or null if not extracted from archive
+     */
+    public String getOriginalArchiveName(String fileName) {
+        return fileToFirstLevelArchive.get(fileName);
     }
 }

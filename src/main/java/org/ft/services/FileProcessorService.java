@@ -377,7 +377,27 @@ public class FileProcessorService {
                 successLogPath
         );
 
+        int maxIterations = 100; // Prevent infinite loops
+        int iteration = 0;
+
         while (true) {
+            // Refresh file list at the beginning of each iteration
+            currentFiles = tempFolder.listFiles();
+            if (currentFiles == null || currentFiles.length == 0) {
+                break;
+            }
+
+            // Safety check to prevent infinite loops
+            iteration++;
+            if (iteration > maxIterations) {
+                log.error("Exceeded maximum iterations ({}) in extractCompressedFiles. Possible infinite loop detected.", maxIterations);
+                logWriter.writeLog("ERROR: Exceeded maximum extraction iterations. Check for circular archive references.",
+                        dataSource,
+                        errorLogPath
+                );
+                break;
+            }
+
             for (File file : currentFiles) {
                 if (file.isDirectory()) {
                     try {
@@ -391,10 +411,17 @@ public class FileProcessorService {
                                     errorLogPath
                             );
 
-                            // insert error log
-                            fileTransferErrorLogService.insertOrUpdateErrorLog(dataSource, environment, file.getName(), ErrorType.EXTRACTION_ERROR, Collections.singletonList(file.getName()));
+                            // Get folder path and archive info from tracking context
+                            String folderPath = trackingContext.getFolderPath(file.getName());
+                            String originalArchive = trackingContext.getOriginalArchiveName(file.getName());
 
-                            // Only move to error folder if the file still exists (might have been moved already during processing)
+                            // insert error log - for extraction errors, the archive file itself is the error
+                            fileTransferErrorLogService.insertErrorLog(
+                                dataSource, environment, file.getName(), ErrorType.EXTRACTION_ERROR,
+                                folderPath, originalArchive
+                            );
+
+                            // Only move to error folder if the file still exists (might have been deleted during processing)
                             if (file.exists()) {
                                 moveToErrorFolder(dataSource, file, environment, ErrorType.EXTRACTION_ERROR, trackingContext);
                             }
@@ -409,10 +436,17 @@ public class FileProcessorService {
                                 errorLogPath
                         );
 
-                        // insert error log
-                        fileTransferErrorLogService.insertOrUpdateErrorLog(dataSource, environment, file.getName(), ErrorType.EXTRACTION_ERROR, Collections.singletonList(file.getName()));
+                        // Get folder path and archive info from tracking context
+                        String folderPath = trackingContext.getFolderPath(file.getName());
+                        String originalArchive = trackingContext.getOriginalArchiveName(file.getName());
 
-                        // Only move to error folder if the file still exists (might have been moved already during extraction)
+                        // insert error log - for extraction errors, the archive file itself is the error
+                        fileTransferErrorLogService.insertErrorLog(
+                            dataSource, environment, file.getName(), ErrorType.EXTRACTION_ERROR,
+                            folderPath, originalArchive
+                        );
+
+                        // Only move to error folder if the file still exists (might have been deleted during failed extraction)
                         if (file.exists()) {
                             moveToErrorFolder(dataSource, file, environment, ErrorType.EXTRACTION_ERROR, trackingContext);
                         }
@@ -423,8 +457,15 @@ public class FileProcessorService {
                             errorLogPath
                     );
 
+                    // Get folder path and archive info from tracking context
+                    String folderPath = trackingContext.getFolderPath(file.getName());
+                    String originalArchive = trackingContext.getOriginalArchiveName(file.getName());
+
                     // insert error log
-                    fileTransferErrorLogService.insertOrUpdateErrorLog(dataSource, environment, file.getName(), ErrorType.WRONG_FILE_TYPE, Collections.singletonList(file.getName()));
+                    fileTransferErrorLogService.insertErrorLog(
+                        dataSource, environment, file.getName(), ErrorType.WRONG_FILE_TYPE,
+                        folderPath, originalArchive
+                    );
                     moveToErrorFolder(dataSource, file, environment, ErrorType.WRONG_FILE_TYPE, trackingContext);
                 }
             }
@@ -496,14 +537,25 @@ public class FileProcessorService {
             File targetFile = new File(tempFolder, file.getName());
 
             if(file.getName().endsWith(FileConstants.XML_EXTENSION)) {
+                // Get folder path and archive info from tracking context
+                String folderPath = trackingContext.getFolderPath(file.getName());
+                String originalArchive = trackingContext.getOriginalArchiveName(file.getName());
+
+                // Log error for original file (targetFile)
+                fileTransferErrorLogService.insertErrorLog(
+                    dataSource, environment, file.getName(), ErrorType.DUPLICATE_FILE,
+                    folderPath, originalArchive
+                );
+
+                // Log error for renamed duplicate file
+                fileTransferErrorLogService.insertErrorLog(
+                    dataSource, environment, renamedFile.getName(), ErrorType.DUPLICATE_FILE,
+                    folderPath, originalArchive
+                );
+
+                // Move both files to error folder
                 moveToErrorFolder(dataSource, targetFile, environment, ErrorType.DUPLICATE_FILE, trackingContext);
                 moveToErrorFolder(dataSource, renamedFile, environment, ErrorType.DUPLICATE_FILE, trackingContext);
-
-                // insert error log
-                List<String> errorFileList = new ArrayList<>();
-                errorFileList.add(file.getName());
-                errorFileList.add(renamedFile.getName());
-                fileTransferErrorLogService.insertOrUpdateErrorLog(dataSource, environment, file.getName(), ErrorType.DUPLICATE_FILE, errorFileList);
 
                 logWriter.writeLog("File already duplicate: " + file.getName(),
                         dataSource,
@@ -591,6 +643,16 @@ public class FileProcessorService {
         trackingContext.trackExtractedFile(file.getName(), sourceZipName, file.length());
 
         if(isExist && file.getName().endsWith(FileConstants.XML_EXTENSION)) {
+            // Get folder path and archive info from tracking context
+            String folderPath = trackingContext.getFolderPath(file.getName());
+            String originalArchive = trackingContext.getOriginalArchiveName(file.getName());
+
+            // Log error for duplicate extracted file
+            fileTransferErrorLogService.insertErrorLog(
+                dataSource, environment, file.getName(), ErrorType.DUPLICATE_FILE,
+                folderPath, originalArchive
+            );
+
             moveToErrorFolder(dataSource, file, environment, ErrorType.DUPLICATE_FILE, trackingContext);
         }
     }
@@ -623,6 +685,16 @@ public class FileProcessorService {
                     trackingContext.trackExtractedFile(outputFile.getName(), sourceZipName, outputFile.length());
 
                     if(isExist && outputFile.getName().endsWith(FileConstants.XML_EXTENSION)) {
+                        // Get folder path and archive info from tracking context
+                        String folderPath = trackingContext.getFolderPath(outputFile.getName());
+                        String originalArchive = trackingContext.getOriginalArchiveName(outputFile.getName());
+
+                        // Log error for duplicate extracted file
+                        fileTransferErrorLogService.insertErrorLog(
+                            dataSource, environment, outputFile.getName(), ErrorType.DUPLICATE_FILE,
+                            folderPath, originalArchive
+                        );
+
                         moveToErrorFolder(dataSource, outputFile, environment, ErrorType.DUPLICATE_FILE, trackingContext);
                     }
                 }
@@ -646,17 +718,21 @@ public class FileProcessorService {
             uniqueFile = new File(file.getParent(), baseName + "(" + counter + ")" + extension);
 
             if(uniqueFile.getName().endsWith(FileConstants.XML_EXTENSION)) {
+                // Get folder path and archive info from tracking context
+                String folderPath = trackingContext.getFolderPath(file.getName());
+                String originalArchive = trackingContext.getOriginalArchiveName(file.getName());
+
+                // Log error for the file being moved to error folder
+                fileTransferErrorLogService.insertErrorLog(
+                    dataSource, environment, file.getName(), ErrorType.DUPLICATE_FILE,
+                    folderPath, originalArchive
+                );
+
                 moveToErrorFolder(dataSource, file, environment, ErrorType.DUPLICATE_FILE, trackingContext);
                 logWriter.writeLog("File already duplicate: " + file.getName(),
                         dataSource,
                         mainFolderPath + dataSource + File.separator + FileConstants.ERROR_FOLDER + File.separator + FileConstants.LOG_FOLDER + File.separator
                 );
-
-                // insert error log
-                List<String> errorFileList = new ArrayList<>();
-                errorFileList.add(file.getName());
-                errorFileList.add(uniqueFile.getName());
-                fileTransferErrorLogService.insertOrUpdateErrorLog(dataSource, environment, file.getName(), ErrorType.DUPLICATE_FILE, errorFileList);
             }
 
             counter++;
@@ -883,7 +959,7 @@ public class FileProcessorService {
 
     private void moveToErrorFolder(String dataSource, File file, String environment, ErrorType errorType, FileTrackingContext trackingContext) {
         try {
-            String errorFolderPath = mainFolderPath + dataSource + File.separator + FileConstants.ERROR_FOLDER + File.separator + FileConstants.FILES_FOLDER + environment + File.separator;
+            String errorFolderPath = mainFolderPath + dataSource + File.separator + FileConstants.ERROR_FOLDER + File.separator + FileConstants.FILES_FOLDER + File.separator + environment + File.separator;
             File errorFolder = new File(errorFolderPath);
 
             // Create the error folder if it doesn't exist
@@ -940,8 +1016,8 @@ public class FileProcessorService {
                 uniqueFile = new File(file.getParent(), baseName + "(" + counter + ")" + extension);
             } while (uniqueFile.exists());
 
-            // insert error log
-            fileTransferErrorLogService.insertOrUpdateErrorLog(dataSource, environment, baseName + extension, errorType, Collections.singletonList(uniqueFile.getName()));
+            // Note: Error logging is now handled separately in the calling methods
+            // This method only handles file renaming for uniqueness in the error folder
         }
 
         return uniqueFile;

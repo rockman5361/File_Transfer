@@ -32,8 +32,11 @@ public class FileTransferErrorLogEntity {
     @JsonProperty("FILE_NAME")
     private String FILE_NAME;
 
-    @JsonProperty("FILE_LIST")
-    private String FILE_LIST;
+    @JsonProperty("FOLDER_PATH")
+    private String FOLDER_PATH;
+
+    @JsonProperty("ORIGINAL_ARCHIVE_FILE_NAME")
+    private String ORIGINAL_ARCHIVE_FILE_NAME;
 
     @JsonProperty("CREATION_DATE")
     @Column(name = "CREATION_DATE", insertable = false, updatable = false)

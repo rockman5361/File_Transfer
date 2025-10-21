@@ -6,7 +6,8 @@
       "Bash(cat:*)",
       "Bash(mysql:*)",
       "Bash(dir:*)",
-      "Bash(where:*)"
+      "Bash(where:*)",
+      "Bash(mvn dependency:build-classpath -Dmdep.outputFile=cp.txt)"
     ],
     "deny": [],
     "ask": []
