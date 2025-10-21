@@ -85,8 +85,7 @@ public class FileProcessorService {
         LocalDateTime cutoffDate = LocalDateTime.now().minusYears(housekeepingBackupFileByYear);
 
         for (Environment value : Environment.values()) {
-            Path backupFolderPath = Paths.get(mainFolderPath, entity.getDATA_SOURCE(),
-                FileConstants.BACKUP_FOLDER, value.name());
+            Path backupFolderPath = Paths.get(mainFolderPath, entity.getDATA_SOURCE(), FileConstants.BACKUP_FOLDER, value.name());
             File backupFolder = backupFolderPath.toFile();
 
             if (backupFolder.exists() && backupFolder.isDirectory()) {
@@ -95,10 +94,7 @@ public class FileProcessorService {
                     for (File file : files) {
                         if (!file.isDirectory()) {
                             try {
-                                String dateTimePart = file.getName().substring(
-                                    file.getName().lastIndexOf("_") + 1,
-                                    file.getName().lastIndexOf(".")
-                                );
+                                String dateTimePart = file.getName().substring(file.getName().lastIndexOf("_") + 1, file.getName().lastIndexOf("."));
                                 LocalDateTime parsedDateTime = LocalDateTime.parse(dateTimePart, formatter);
 
                                 if (parsedDateTime.isBefore(cutoffDate)) {
@@ -140,10 +136,7 @@ public class FileProcessorService {
                 for (File file : files) {
                     if (!file.isDirectory()) {
                         try {
-                            String dateTimePart = file.getName().substring(
-                                file.getName().lastIndexOf("_") + 1,
-                                file.getName().lastIndexOf(".")
-                            );
+                            String dateTimePart = file.getName().substring(file.getName().lastIndexOf("_") + 1, file.getName().lastIndexOf("."));
                             LocalDate parsedDateTime = LocalDate.parse(dateTimePart);
 
                             if (parsedDateTime.isBefore(cutoffDate)) {
@@ -207,8 +200,7 @@ public class FileProcessorService {
                 }
 
                 // Create backup folder for each environment
-                Path environmentBackupPath = Paths.get(mainFolderPath, entity.getDATA_SOURCE(),
-                    FileConstants.BACKUP_FOLDER, environment);
+                Path environmentBackupPath = Paths.get(mainFolderPath, entity.getDATA_SOURCE(), FileConstants.BACKUP_FOLDER, environment);
                 File environmentBackupFolder = environmentBackupPath.toFile();
                 if (!environmentBackupFolder.exists()) {
                     environmentBackupFolder.mkdirs();
@@ -375,21 +367,43 @@ public class FileProcessorService {
     }
 
     private void extractCompressedFiles(File tempFolder, String dataSource, String successLogPath, String errorLogPath, String environment, FileTrackingContext trackingContext) {
-        if (tempFolder.listFiles() != null && Objects.requireNonNull(tempFolder.listFiles()).length != 0) {
-            logWriter.writeLog("Start Compressed files in temp folder",
-                    dataSource,
-                    successLogPath
-            );
+        File[] currentFiles = tempFolder.listFiles();
+        if (currentFiles == null || currentFiles.length == 0) {
+            return;
         }
 
-        for (File file : Objects.requireNonNull(tempFolder.listFiles())) {
-            if (file.isDirectory()) {
-                try {
-                    processDirectory(file, dataSource, tempFolder, environment, trackingContext);
-                } catch (IOException e) {
-                    if (e.getMessage().contains(FileConstants.FILE_ALREADY_EXISTS)) {
-                        fileExists(tempFolder, file, dataSource, environment, trackingContext);
-                    } else {
+        logWriter.writeLog("Start Compressed files in temp folder",
+                dataSource,
+                successLogPath
+        );
+
+        while (true) {
+            for (File file : currentFiles) {
+                if (file.isDirectory()) {
+                    try {
+                        processDirectory(file, dataSource, tempFolder, environment, trackingContext);
+                    } catch (IOException e) {
+                        if (e.getMessage().contains(FileConstants.FILE_ALREADY_EXISTS)) {
+                            fileExists(tempFolder, file, dataSource, environment, trackingContext);
+                        } else {
+                            logWriter.writeLog("Failed to extract compressed file: " + file.getAbsolutePath() + " - " + e.getMessage(),
+                                    dataSource,
+                                    errorLogPath
+                            );
+
+                            // insert error log
+                            fileTransferErrorLogService.insertOrUpdateErrorLog(dataSource, environment, file.getName(), ErrorType.EXTRACTION_ERROR, Collections.singletonList(file.getName()));
+
+                            // Only move to error folder if the file still exists (might have been moved already during processing)
+                            if (file.exists()) {
+                                moveToErrorFolder(dataSource, file, environment, ErrorType.EXTRACTION_ERROR, trackingContext);
+                            }
+                        }
+                    }
+                } else if (isCompressedFile(file)) {
+                    try {
+                        extractCompressedFile(file, dataSource, environment, tempFolder, trackingContext);
+                    } catch (IOException e) {
                         logWriter.writeLog("Failed to extract compressed file: " + file.getAbsolutePath() + " - " + e.getMessage(),
                                 dataSource,
                                 errorLogPath
@@ -398,57 +412,34 @@ public class FileProcessorService {
                         // insert error log
                         fileTransferErrorLogService.insertOrUpdateErrorLog(dataSource, environment, file.getName(), ErrorType.EXTRACTION_ERROR, Collections.singletonList(file.getName()));
 
-                        // Only move to error folder if the file still exists (might have been moved already during processing)
+                        // Only move to error folder if the file still exists (might have been moved already during extraction)
                         if (file.exists()) {
                             moveToErrorFolder(dataSource, file, environment, ErrorType.EXTRACTION_ERROR, trackingContext);
                         }
                     }
-                }
-            } else if (isCompressedFile(file)) {
-                try {
-                    extractCompressedFile(file, dataSource, environment, tempFolder, trackingContext);
-                } catch (IOException e) {
-                    logWriter.writeLog("Failed to extract compressed file: " + file.getAbsolutePath() + " - " + e.getMessage(),
+                } else if (!file.getName().endsWith(FileConstants.XML_EXTENSION)) {
+                    logWriter.writeLog("Unsupported file format: " + file.getName(),
                             dataSource,
                             errorLogPath
                     );
 
                     // insert error log
-                    fileTransferErrorLogService.insertOrUpdateErrorLog(dataSource, environment, file.getName(), ErrorType.EXTRACTION_ERROR, Collections.singletonList(file.getName()));
-
-                    // Only move to error folder if the file still exists (might have been moved already during extraction)
-                    if (file.exists()) {
-                        moveToErrorFolder(dataSource, file, environment, ErrorType.EXTRACTION_ERROR, trackingContext);
-                    }
+                    fileTransferErrorLogService.insertOrUpdateErrorLog(dataSource, environment, file.getName(), ErrorType.WRONG_FILE_TYPE, Collections.singletonList(file.getName()));
+                    moveToErrorFolder(dataSource, file, environment, ErrorType.WRONG_FILE_TYPE, trackingContext);
                 }
+            }
+
+            boolean noArchive = Arrays.stream(currentFiles).noneMatch(f -> f.isDirectory() || isCompressedFile(f));
+
+            if(noArchive) {
+                break;
             }
         }
 
-        for (File file : Objects.requireNonNull(tempFolder.listFiles())) {
-            if (file.isDirectory()) {
-                try {
-                    processDirectory(file, dataSource, tempFolder, environment, trackingContext);
-                } catch (IOException e) {
-                    log.error("Failed to process directory: {}", file.getAbsolutePath(), e);
-                }
-            } else if (!file.getName().endsWith(FileConstants.XML_EXTENSION)) {
-                logWriter.writeLog("Unsupported file format: " + file.getName(),
-                        dataSource,
-                        errorLogPath
-                );
-
-                // insert error log
-                fileTransferErrorLogService.insertOrUpdateErrorLog(dataSource, environment, file.getName(), ErrorType.WRONG_FILE_TYPE, Collections.singletonList(file.getName()));
-                moveToErrorFolder(dataSource, file, environment, ErrorType.WRONG_FILE_TYPE, trackingContext);
-            }
-        }
-
-        if (tempFolder.listFiles() != null && Objects.requireNonNull(tempFolder.listFiles()).length != 0) {
-            logWriter.writeLog("End of compressed files in temp folder",
-                    dataSource,
-                    successLogPath
-            );
-        }
+        logWriter.writeLog("End of compressed files in temp folder",
+                dataSource,
+                successLogPath
+        );
     }
 
     private void processDirectory(File directory, String dataSource, File tempFolder, String environment, FileTrackingContext trackingContext) throws IOException {
@@ -483,7 +474,7 @@ public class FileProcessorService {
                 // Create new file name with suffix
                 File renamedFile = renameFileName(file, 1);
 
-                if(renamedFile.isDirectory()) {
+                if(renamedFile.isDirectory() || isCompressedFile(file)) {
                     // Move the directory to the error folder
                     FileUtils.moveDirectoryToDirectory(renamedFile, tempFolder, true);
                     File[] files = file.listFiles();
@@ -504,19 +495,21 @@ public class FileProcessorService {
             // Move both files to the error folder
             File targetFile = new File(tempFolder, file.getName());
 
-            moveToErrorFolder(dataSource, targetFile, environment, ErrorType.DUPLICATE_FILE, trackingContext);
-            moveToErrorFolder(dataSource, renamedFile, environment, ErrorType.DUPLICATE_FILE, trackingContext);
+            if(file.getName().endsWith(FileConstants.XML_EXTENSION)) {
+                moveToErrorFolder(dataSource, targetFile, environment, ErrorType.DUPLICATE_FILE, trackingContext);
+                moveToErrorFolder(dataSource, renamedFile, environment, ErrorType.DUPLICATE_FILE, trackingContext);
 
-            // insert error log
-            List<String> errorFileList = new ArrayList<>();
-            errorFileList.add(file.getName());
-            errorFileList.add(renamedFile.getName());
-            fileTransferErrorLogService.insertOrUpdateErrorLog(dataSource, environment, file.getName(), ErrorType.DUPLICATE_FILE, errorFileList);
+                // insert error log
+                List<String> errorFileList = new ArrayList<>();
+                errorFileList.add(file.getName());
+                errorFileList.add(renamedFile.getName());
+                fileTransferErrorLogService.insertOrUpdateErrorLog(dataSource, environment, file.getName(), ErrorType.DUPLICATE_FILE, errorFileList);
 
-            logWriter.writeLog("File already duplicate: " + file.getName(),
-                    dataSource,
-                    mainFolderPath + dataSource + File.separator + FileConstants.ERROR_FOLDER + File.separator + FileConstants.LOG_FOLDER + File.separator
-            );
+                logWriter.writeLog("File already duplicate: " + file.getName(),
+                        dataSource,
+                        mainFolderPath + dataSource + File.separator + FileConstants.ERROR_FOLDER + File.separator + FileConstants.LOG_FOLDER + File.separator
+                );
+            }
         }
     }
 
@@ -547,13 +540,13 @@ public class FileProcessorService {
         File destDir = file.getParentFile();
         String sourceZipName = file.getName();
 
-        if (file.getName().endsWith(".zip")) {
+        if (file.getName().endsWith(FileConstants.ZIP_EXTENSION)) {
             extractZip(file, destDir, dataSource, environment, tempFolderPath, trackingContext, sourceZipName);
-        } else if (file.getName().endsWith(".tar")) {
+        } else if (file.getName().endsWith(FileConstants.TAR_EXTENSION)) {
             extractTar(file, destDir, dataSource, environment, tempFolderPath, trackingContext, sourceZipName);
-        } else if (file.getName().endsWith(".tz") || file.getName().endsWith(".tar.gz")) {
+        } else if (file.getName().endsWith(FileConstants.TZ_EXTENSION) || file.getName().endsWith(FileConstants.TAR_GZ_EXTENSION)) {
             extractTz(file, destDir, dataSource, environment, tempFolderPath, trackingContext, sourceZipName);
-        } else if (file.getName().endsWith(".7z")) {
+        } else if (file.getName().endsWith(FileConstants.SEVEN_Z_EXTENSION)) {
             extract7z(file, destDir, dataSource, environment, tempFolderPath, trackingContext, sourceZipName);
         }
 
@@ -597,7 +590,7 @@ public class FileProcessorService {
         // Track the extracted file
         trackingContext.trackExtractedFile(file.getName(), sourceZipName, file.length());
 
-        if(isExist) {
+        if(isExist && file.getName().endsWith(FileConstants.XML_EXTENSION)) {
             moveToErrorFolder(dataSource, file, environment, ErrorType.DUPLICATE_FILE, trackingContext);
         }
     }
@@ -629,7 +622,7 @@ public class FileProcessorService {
                     // Track the extracted file
                     trackingContext.trackExtractedFile(outputFile.getName(), sourceZipName, outputFile.length());
 
-                    if(isExist) {
+                    if(isExist && outputFile.getName().endsWith(FileConstants.XML_EXTENSION)) {
                         moveToErrorFolder(dataSource, outputFile, environment, ErrorType.DUPLICATE_FILE, trackingContext);
                     }
                 }
@@ -652,7 +645,7 @@ public class FileProcessorService {
         while (uniqueFile.exists()) {
             uniqueFile = new File(file.getParent(), baseName + "(" + counter + ")" + extension);
 
-            if(!(uniqueFile.isDirectory() && isCompressedFile(uniqueFile))) {
+            if(uniqueFile.getName().endsWith(FileConstants.XML_EXTENSION)) {
                 moveToErrorFolder(dataSource, file, environment, ErrorType.DUPLICATE_FILE, trackingContext);
                 logWriter.writeLog("File already duplicate: " + file.getName(),
                         dataSource,
