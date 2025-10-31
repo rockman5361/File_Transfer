@@ -47,6 +47,9 @@ public class ZipTrackingDTO {
     @JsonProperty("backup_path")
     private String backupPath;
 
+    @JsonProperty("original_backup_path")
+    private String originalBackupPath;
+
     @JsonProperty("uploaded_to_datalake")
     private Boolean uploadedToDatalake;
 }

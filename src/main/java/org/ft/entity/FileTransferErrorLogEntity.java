@@ -35,6 +35,9 @@ public class FileTransferErrorLogEntity {
     @JsonProperty("FOLDER_PATH")
     private String FOLDER_PATH;
 
+    @JsonProperty("ORIGINAL_BACKUP_PATH")
+    private String ORIGINAL_BACKUP_PATH;
+
     @JsonProperty("ORIGINAL_ARCHIVE_FILE_NAME")
     private String ORIGINAL_ARCHIVE_FILE_NAME;
 

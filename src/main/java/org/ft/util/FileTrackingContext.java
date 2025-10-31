@@ -33,6 +33,10 @@ public class FileTrackingContext {
     @Getter
     private final String environment;
 
+    // Path to original backup folder (before processing)
+    @Getter
+    private String originalBackupPath;
+
     public FileTrackingContext(String environment) {
         this.environment = environment;
         this.fileMetadata = new ConcurrentHashMap<>();
@@ -40,6 +44,15 @@ public class FileTrackingContext {
         this.extractedFileToZip = new ConcurrentHashMap<>();
         this.fileToFirstLevelArchive = new ConcurrentHashMap<>();
         this.sourceFolderPaths = new HashSet<>();
+    }
+
+    /**
+     * Sets the original backup path for this context.
+     *
+     * @param originalBackupPath the path to the original backup folder
+     */
+    public void setOriginalBackupPath(String originalBackupPath) {
+        this.originalBackupPath = originalBackupPath;
     }
 
     /**

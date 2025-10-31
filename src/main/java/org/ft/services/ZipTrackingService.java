@@ -55,6 +55,7 @@ public class ZipTrackingService {
             entity.setTOTAL_FILES_COUNT(trackingDTO.getTotalFilesCount());
             entity.setCREATED_TIMESTAMP(trackingDTO.getCreatedTimestamp());
             entity.setBACKUP_PATH(trackingDTO.getBackupPath());
+            entity.setORIGINAL_BACKUP_PATH(trackingDTO.getOriginalBackupPath());
             entity.setUPLOADED_TO_DATALAKE(trackingDTO.getUploadedToDatalake());
 
             FileTransferZipTrackingEntity savedEntity = zipTrackingRepository.save(entity);
@@ -165,6 +166,7 @@ public class ZipTrackingService {
         private final List<FileInfoDTO> filesInfo;
         private Long zipSizeBytes;
         private String backupPath;
+        private String originalBackupPath;
         private Boolean uploadedToDatalake;
 
         public ZipTrackingDTOBuilder(String finalZipName, String dataSource, String environment) {
@@ -238,6 +240,14 @@ public class ZipTrackingService {
         }
 
         /**
+         * Sets the original backup path (before processing).
+         */
+        public ZipTrackingDTOBuilder setOriginalBackupPath(String originalBackupPath) {
+            this.originalBackupPath = originalBackupPath;
+            return this;
+        }
+
+        /**
          * Sets the datalake upload status.
          */
         public ZipTrackingDTOBuilder setUploadedToDatalake(Boolean uploaded) {
@@ -259,6 +269,7 @@ public class ZipTrackingService {
                     .totalFilesCount(filesInfo.size())
                     .createdTimestamp(LocalDateTime.now())
                     .backupPath(backupPath)
+                    .originalBackupPath(originalBackupPath)
                     .uploadedToDatalake(uploadedToDatalake)
                     .build();
         }

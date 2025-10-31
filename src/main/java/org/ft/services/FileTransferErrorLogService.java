@@ -31,11 +31,12 @@ public class FileTransferErrorLogService {
      * @param errorMessage the error type
      * @param folderPath the folder path where the file came from
      * @param originalArchiveFileName the archive file name if extracted (first-level only)
+     * @param originalBackupPath the path to the original backup folder
      */
     public void insertErrorLog(String dataSource, String environment, String fileName, ErrorType errorMessage,
-                               String folderPath, String originalArchiveFileName) {
-        log.debug("Creating error log - Data Source: {}, Environment: {}, File Name: {}, Error: {}, Folder Path: {}, Archive: {}",
-            dataSource, environment, fileName, errorMessage.name(), folderPath, originalArchiveFileName);
+                               String folderPath, String originalArchiveFileName, String originalBackupPath) {
+        log.debug("Creating error log - Data Source: {}, Environment: {}, File Name: {}, Error: {}, Folder Path: {}, Archive: {}, Original Backup: {}",
+            dataSource, environment, fileName, errorMessage.name(), folderPath, originalArchiveFileName, originalBackupPath);
 
         log.info("Creating new error log entry for file: {} in data source: {}", fileName, dataSource);
         FileTransferErrorLogEntity entity = new FileTransferErrorLogEntity();
@@ -45,6 +46,7 @@ public class FileTransferErrorLogService {
         entity.setFILE_NAME(fileName);
         entity.setERROR_MESSAGE(errorMessage.name());
         entity.setFOLDER_PATH(folderPath);
+        entity.setORIGINAL_BACKUP_PATH(originalBackupPath);
         entity.setORIGINAL_ARCHIVE_FILE_NAME(originalArchiveFileName);
 
         fileTransferErrorLogRepository.saveAndFlush(entity);

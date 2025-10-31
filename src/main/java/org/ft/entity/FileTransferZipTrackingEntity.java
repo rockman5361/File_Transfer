@@ -59,6 +59,10 @@ public class FileTransferZipTrackingEntity {
     @Column(name = "BACKUP_PATH", length = 1000)
     private String BACKUP_PATH;
 
+    @JsonProperty("ORIGINAL_BACKUP_PATH")
+    @Column(name = "ORIGINAL_BACKUP_PATH", length = 1000)
+    private String ORIGINAL_BACKUP_PATH;
+
     @JsonProperty("UPLOADED_TO_DATALAKE")
     @Column(name = "UPLOADED_TO_DATALAKE")
     private Boolean UPLOADED_TO_DATALAKE;

@@ -57,6 +57,9 @@ public class FileProcessorService {
     @Autowired
     private ZipTrackingService zipTrackingService;
 
+    @Autowired
+    private OriginalBackupService originalBackupService;
+
     @Value(value = "${file-transfer.processing-path}")
     private String mainFolderPath;
 
@@ -205,6 +208,39 @@ public class FileProcessorService {
                 if (!environmentBackupFolder.exists()) {
                     environmentBackupFolder.mkdirs();
                 }
+
+                // Create original backup before processing
+                String originalBackupPath = null;
+                if (originalBackupService.isBackupEnabled()) {
+                    // Collect all files from source folders for this environment
+                    List<File> filesToBackup = new ArrayList<>();
+                    for (FileTransferFolderPathEntity folderPathEntity : folderPathEntityList) {
+                        File folderPath = new File(folderPathEntity.getFOLDER_PATH());
+                        File[] files = folderPath.listFiles();
+                        if (files != null) {
+                            filesToBackup.addAll(Arrays.asList(files));
+                        }
+                    }
+
+                    // Backup original files
+                    if (!filesToBackup.isEmpty()) {
+                        originalBackupPath = originalBackupService.backupOriginalFiles(
+                            filesToBackup,
+                            entity.getDATA_SOURCE(),
+                            environment,
+                            mainFolderPath
+                        );
+                        if (originalBackupPath != null) {
+                            logWriter.writeLog("Original backup created at: " + originalBackupPath,
+                                    entity.getDATA_SOURCE(),
+                                    successLogPath
+                            );
+                        }
+                    }
+                }
+
+                // Store original backup path in tracking context for later use
+                trackingContext.setOriginalBackupPath(originalBackupPath);
 
                 // Move each folder path for the current environment
                 processFolderPaths(folderPathEntityList, entity, environmentTempFolder, successLogPath, environment, trackingContext);
@@ -418,7 +454,7 @@ public class FileProcessorService {
                             // insert error log - for extraction errors, the archive file itself is the error
                             fileTransferErrorLogService.insertErrorLog(
                                 dataSource, environment, file.getName(), ErrorType.EXTRACTION_ERROR,
-                                folderPath, originalArchive
+                                folderPath, originalArchive, trackingContext.getOriginalBackupPath()
                             );
 
                             // Only move to error folder if the file still exists (might have been deleted during processing)
@@ -443,7 +479,7 @@ public class FileProcessorService {
                         // insert error log - for extraction errors, the archive file itself is the error
                         fileTransferErrorLogService.insertErrorLog(
                             dataSource, environment, file.getName(), ErrorType.EXTRACTION_ERROR,
-                            folderPath, originalArchive
+                            folderPath, originalArchive, trackingContext.getOriginalBackupPath()
                         );
 
                         // Only move to error folder if the file still exists (might have been deleted during failed extraction)
@@ -464,7 +500,7 @@ public class FileProcessorService {
                     // insert error log
                     fileTransferErrorLogService.insertErrorLog(
                         dataSource, environment, file.getName(), ErrorType.WRONG_FILE_TYPE,
-                        folderPath, originalArchive
+                        folderPath, originalArchive, trackingContext.getOriginalBackupPath()
                     );
                     moveToErrorFolder(dataSource, file, environment, ErrorType.WRONG_FILE_TYPE, trackingContext);
                 }
@@ -544,13 +580,13 @@ public class FileProcessorService {
                 // Log error for original file (targetFile)
                 fileTransferErrorLogService.insertErrorLog(
                     dataSource, environment, file.getName(), ErrorType.DUPLICATE_FILE,
-                    folderPath, originalArchive
+                    folderPath, originalArchive, trackingContext.getOriginalBackupPath()
                 );
 
                 // Log error for renamed duplicate file
                 fileTransferErrorLogService.insertErrorLog(
                     dataSource, environment, renamedFile.getName(), ErrorType.DUPLICATE_FILE,
-                    folderPath, originalArchive
+                    folderPath, originalArchive, trackingContext.getOriginalBackupPath()
                 );
 
                 // Move both files to error folder
@@ -650,7 +686,7 @@ public class FileProcessorService {
             // Log error for duplicate extracted file
             fileTransferErrorLogService.insertErrorLog(
                 dataSource, environment, file.getName(), ErrorType.DUPLICATE_FILE,
-                folderPath, originalArchive
+                folderPath, originalArchive, trackingContext.getOriginalBackupPath()
             );
 
             moveToErrorFolder(dataSource, file, environment, ErrorType.DUPLICATE_FILE, trackingContext);
@@ -692,7 +728,7 @@ public class FileProcessorService {
                         // Log error for duplicate extracted file
                         fileTransferErrorLogService.insertErrorLog(
                             dataSource, environment, outputFile.getName(), ErrorType.DUPLICATE_FILE,
-                            folderPath, originalArchive
+                            folderPath, originalArchive, trackingContext.getOriginalBackupPath()
                         );
 
                         moveToErrorFolder(dataSource, outputFile, environment, ErrorType.DUPLICATE_FILE, trackingContext);
@@ -725,7 +761,7 @@ public class FileProcessorService {
                 // Log error for the file being moved to error folder
                 fileTransferErrorLogService.insertErrorLog(
                     dataSource, environment, file.getName(), ErrorType.DUPLICATE_FILE,
-                    folderPath, originalArchive
+                    folderPath, originalArchive, trackingContext.getOriginalBackupPath()
                 );
 
                 moveToErrorFolder(dataSource, file, environment, ErrorType.DUPLICATE_FILE, trackingContext);
@@ -901,6 +937,11 @@ public class FileProcessorService {
 
             // Set zip metadata
             builder.setZipSize(zipFile.length());
+
+            // Set original backup path from tracking context
+            if (trackingContext.getOriginalBackupPath() != null) {
+                builder.setOriginalBackupPath(trackingContext.getOriginalBackupPath());
+            }
 
             // Build and save
             ZipTrackingDTO trackingDTO = builder.build();

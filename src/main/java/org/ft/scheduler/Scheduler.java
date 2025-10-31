@@ -34,6 +34,9 @@ public class Scheduler {
     @Autowired
     private CustomMapper mapper;
 
+    @Autowired
+    private org.ft.services.OriginalBackupService originalBackupService;
+
 
     private final DateTimeFormatter dateTimeFormatter = DateTimeFormatter.ofPattern("yyyy:MM:dd HH:mm:ss");
     private static boolean isRunning = false;
@@ -89,5 +92,16 @@ public class Scheduler {
             log.error("Error during deletion of old files", e);
         }
         log.info("Scheduler for deleting old files ended at: {}", dateTimeFormatter.format(java.time.LocalDateTime.now()));
+    }
+
+    @Scheduled(cron = "0 0 2 * * *") // Every day at 2:00 AM
+    public void deleteOldOriginalBackups() {
+        log.info("Scheduler for deleting old original backup files started at: {}", dateTimeFormatter.format(java.time.LocalDateTime.now()));
+        try {
+//            originalBackupService.deleteOldOriginalBackups();
+        } catch (Exception e) {
+            log.error("Error during deletion of old original backup files", e);
+        }
+        log.info("Scheduler for deleting old original backup files ended at: {}", dateTimeFormatter.format(java.time.LocalDateTime.now()));
     }
 }
